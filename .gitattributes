@@ -1,0 +1,5 @@
+# Scripts y configuración ejecutados en Linux por GitHub Actions / la VM.
+Dockerfile text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+deployment/Caddyfile text eol=lf

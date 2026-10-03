@@ -1,0 +1,51 @@
+# Configuración y secretos
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Claves SSH/TLS y archivos privados de despliegue
+.ssh/
+*.pem
+*.key
+*.p12
+*.pfx
+*.pub
+id_rsa*
+id_ed25519*
+calco-github-actions*
+known_hosts*
+compose.env
+deployment/*.env
+credentials*.json
+service-account*.json
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.coverage
+htmlcov/
+
+# Frontend
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Archivos de referencia con información personal y exportaciones
+*.xlsx
+*.xls
+*.csv
+*.sql
+
+# Temporales y validaciones locales
+.tmp/
+tmp/
+*.tmp
+*.log
+logs/
+test-results/
+playwright-report/
+.DS_Store
+Thumbs.db

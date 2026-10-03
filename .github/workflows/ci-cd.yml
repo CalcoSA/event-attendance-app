@@ -1,0 +1,189 @@
+name: CI y despliegue en GCP
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# No interrumpir un despliegue que ya esté modificando contenedores.
+concurrency:
+  group: attendance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Validar backend y frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: Pruebas aisladas, sin conexión a MySQL
+        working-directory: backend
+        run: |
+          python -m pip install -r requirements-test.txt
+          python -m compileall -q app
+          python -m unittest discover -s tests -v
+          python -m pip check
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: TypeScript y compilación PWA
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Validar Compose sin credenciales reales
+        env:
+          BACKEND_ENV_PATH: .env.production.example
+          APP_DOMAIN: attendance.example.com
+          ACME_EMAIL: operations@example.com
+        run: docker compose config --quiet
+
+  images:
+    name: Construir imágenes
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      backend_image: ${{ steps.names.outputs.backend }}@${{ steps.backend.outputs.digest }}
+      frontend_image: ${{ steps.names.outputs.frontend }}@${{ steps.frontend.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Nombres de imágenes en minúsculas
+        id: names
+        shell: bash
+        run: |
+          echo "backend=ghcr.io/${GITHUB_REPOSITORY,,}-backend" >> "$GITHUB_OUTPUT"
+          echo "frontend=ghcr.io/${GITHUB_REPOSITORY,,}-frontend" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Autenticación en GHCR
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Imagen backend
+        id: backend
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: backend
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.names.outputs.backend }}:${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - name: Imagen frontend y HTTPS
+        id: frontend
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: frontend
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.names.outputs.frontend }}:${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  deploy:
+    name: Desplegar por SSH
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Preparar y desplegar la versión validada
+        shell: bash
+        env:
+          GCP_HOST: ${{ secrets.GCP_HOST }}
+          SSH_PRIVATE_KEY: ${{ secrets.GCP_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.GCP_SSH_KNOWN_HOSTS }}
+          APP_ENV_CONTENT: ${{ secrets.APP_ENV_FILE }}
+          SSH_USER: ${{ vars.GCP_SSH_USER || 'calco-github-actions' }}
+          SSH_PORT: ${{ vars.GCP_SSH_PORT || '22' }}
+          APP_DOMAIN: ${{ vars.APP_DOMAIN }}
+          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+          BACKEND_IMAGE: ${{ needs.images.outputs.backend_image }}
+          FRONTEND_IMAGE: ${{ needs.images.outputs.frontend_image }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          python3 - <<'PY'
+          import os
+          import re
+          for name in ('GCP_HOST', 'SSH_PRIVATE_KEY', 'SSH_KNOWN_HOSTS', 'APP_ENV_CONTENT', 'APP_DOMAIN', 'ACME_EMAIL'):
+              if not os.environ.get(name, '').strip():
+                  raise SystemExit(f'Falta configurar el secret o variable: {name}')
+          patterns = {
+              'GCP_HOST': r'[a-zA-Z0-9][a-zA-Z0-9.-]*',
+              'SSH_USER': r'[a-z_][a-z0-9_-]*',
+              'APP_DOMAIN': r'[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}',
+              'ACME_EMAIL': r'[a-zA-Z0-9._+%-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
+              'RELEASE_ID': r'[a-f0-9]{40}-[0-9]+-[0-9]+',
+              'BACKEND_IMAGE': r'ghcr\.io/[a-z0-9_./-]+@sha256:[a-f0-9]{64}',
+              'FRONTEND_IMAGE': r'ghcr\.io/[a-z0-9_./-]+@sha256:[a-f0-9]{64}',
+          }
+          for name, pattern in patterns.items():
+              if not re.fullmatch(pattern, os.environ.get(name, '')):
+                  raise SystemExit(f'Formato inválido: {name}')
+          port = os.environ['SSH_PORT']
+          if not port.isdigit() or not 1 <= int(port) <= 65535:
+              raise SystemExit('Puerto SSH inválido.')
+          PY
+          SSH_DIR="$RUNNER_TEMP/attendance-ssh"
+          UPLOAD_DIR="$RUNNER_TEMP/attendance-deploy"
+          mkdir -p "$SSH_DIR" "$UPLOAD_DIR"
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$SSH_DIR/key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" | tr -d '\r' > "$SSH_DIR/known_hosts"
+          printf '%s\n' "$APP_ENV_CONTENT" | tr -d '\r' > "$UPLOAD_DIR/.env.production"
+          printf '%s\n' "BACKEND_IMAGE=$BACKEND_IMAGE" "FRONTEND_IMAGE=$FRONTEND_IMAGE" \
+            "APP_DOMAIN=$APP_DOMAIN" "ACME_EMAIL=$ACME_EMAIL" > "$UPLOAD_DIR/compose.env"
+          cp docker-compose.yml deployment/deploy.sh "$UPLOAD_DIR/"
+          chmod 600 "$SSH_DIR/key" "$SSH_DIR/known_hosts" "$UPLOAD_DIR/.env.production"
+          SSH_ARGS=(-F /dev/null -i "$SSH_DIR/key" -o BatchMode=yes -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$SSH_DIR/known_hosts"
+            -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+          TARGET="$SSH_USER@$GCP_HOST"
+          REMOTE_RELEASE="event-attendance-app/releases/$RELEASE_ID"
+          ssh "${SSH_ARGS[@]}" -p "$SSH_PORT" "$TARGET" "umask 077; mkdir -p '$REMOTE_RELEASE'"
+          scp "${SSH_ARGS[@]}" -P "$SSH_PORT" "$UPLOAD_DIR/docker-compose.yml" \
+            "$UPLOAD_DIR/deploy.sh" "$UPLOAD_DIR/compose.env" "$UPLOAD_DIR/.env.production" \
+            "$TARGET:$REMOTE_RELEASE/"
+          printf '%s\n' "$GHCR_TOKEN" | ssh "${SSH_ARGS[@]}" -p "$SSH_PORT" "$TARGET" \
+            "bash '$REMOTE_RELEASE/deploy.sh' '$RELEASE_ID' '$GITHUB_ACTOR' '$APP_DOMAIN'"
+      - name: Eliminar archivos sensibles del runner
+        if: always()
+        shell: bash
+        run: |
+          rm -rf -- "${RUNNER_TEMP:?}/attendance-ssh" "${RUNNER_TEMP:?}/attendance-deploy"
