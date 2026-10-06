@@ -14,7 +14,7 @@ export interface EventDay {
 export interface EventContext {
   event: { event_id: number; code: string; name: string }
   days: EventDay[]
-  buses: { bus_id: number; bus_number: number }[]
+  buses: { bus_id: number; bus_number: number; display_name: string }[]
   suggested_day_id: number | null
   today: string
 }
@@ -26,6 +26,7 @@ export interface AttendanceSummary {
   actual_day: string
   bus_id: number
   bus_number: number
+  display_name: string
   checked_in_at: string
   registered_by_document: string
   registered_by_name: string

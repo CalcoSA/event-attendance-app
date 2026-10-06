@@ -82,7 +82,7 @@ function PreviousAttendance({ attendance }: { attendance: AttendanceSummary }) {
     <div className="notice success"><Icon name="check" /><div><strong>ASISTENCIA YA REGISTRADA</strong><p>Esta persona ya fue registrada previamente.</p></div></div>
     <dl className="details-grid">
       <div><dt>Día real</dt><dd>{attendance.actual_day}</dd></div>
-      <div><dt>Bus</dt><dd>Bus {attendance.bus_number}</dd></div>
+      <div><dt>Bus</dt><dd>{attendance.display_name}</dd></div>
       <div><dt>Fecha y hora</dt><dd>{time}</dd></div>
       <div><dt>Usuario que registró</dt><dd>{attendance.registered_by_name}<small>CC {attendance.registered_by_document}</small></dd></div>
       <div><dt>Titular presente</dt><dd>{attendance.titular_present ? 'Sí' : 'No'}</dd></div>
@@ -148,7 +148,7 @@ function CheckIn({ participant, context, connected, onSuccess, onDuplicate, onBu
   return <form className="check-in-form" onSubmit={submit}>
     <fieldset disabled={busy}>
       <div className="form-section-heading"><span className="step-number">02</span><h3>Confirma la llegada</h3></div>
-      <div className="field-grid"><div><label htmlFor="actual-day"><Icon name="calendar" size={17} /> Día real</label><select id="actual-day" value={dayId} onChange={e => setDayId(Number(e.target.value))} required>{context.days.map(value => <option key={value.event_day_id} value={value.event_day_id}>{value.day_label}</option>)}</select></div><div><label htmlFor="bus"><Icon name="bus" size={17} /> Bus real</label><select id="bus" value={busId} onChange={e => setBusId(e.target.value)} required><option value="">Selecciona un bus</option>{context.buses.map(value => <option key={value.bus_id} value={value.bus_id}>Bus {value.bus_number}</option>)}</select></div></div>
+      <div className="field-grid"><div><label htmlFor="actual-day"><Icon name="calendar" size={17} /> Día real</label><select id="actual-day" value={dayId} onChange={e => setDayId(Number(e.target.value))} required>{context.days.map(value => <option key={value.event_day_id} value={value.event_day_id}>{value.day_label}</option>)}</select></div><div><label htmlFor="bus"><Icon name="bus" size={17} /> Bus real</label><select id="bus" value={busId} onChange={e => setBusId(e.target.value)} required><option value="">Selecciona un bus</option>{context.buses.map(value => <option key={value.bus_id} value={value.bus_id}>{value.display_name}</option>)}</select></div></div>
       {differentDay && <div className="notice warning" role="status"><Icon name="alert" /><span>Esta persona estaba programada para {participant.planned_day}, pero está siendo registrada para {day?.day_label}.</span></div>}
       {context.buses.length === 0 && <ErrorNotice>No hay buses activos disponibles. Contacta al responsable de logística.</ErrorNotice>}
       <div className="companions-heading"><h3>¿Quiénes llegaron?</h3><span>{participant.planned_companion_count} acompañantes registrados</span></div>
@@ -156,7 +156,7 @@ function CheckIn({ participant, context, connected, onSuccess, onDuplicate, onBu
       <button className="button add-member" type="button" disabled={members.length >= 51} onClick={() => setMembers(current => [...current, { member_number: current.length, member_type: 'COMPANION', is_present: true }])}><Icon name="plus" size={18} />Agregar acompañante</button>
       {members.length >= 51 && <p className="muted small">Máximo 50 acompañantes.</p>}
       <div className="presence-totals"><div><span>Registrados</span><strong>{participant.planned_companion_count} <small>acompañantes</small></strong></div><div><span>Presentes</span><strong>{companions} <small>acompañantes</small></strong></div><div><span>Total presentes</span><strong>{total} <small>{total === 1 ? 'persona' : 'personas'}</small></strong></div></div>
-      <div className="confirmation"><div className="confirmation-title"><Icon name="check" size={18} /><h3>Resumen de asistencia</h3></div><strong className="summary-name">{participant.full_name}</strong><p>{day?.day_label ?? 'Selecciona el día'} <span>·</span> {bus ? `Bus ${bus.bus_number}` : 'Bus pendiente'}</p><p>Titular: {titular ? 'Sí' : 'No'} <span>·</span> Acompañantes: {companions} <span>·</span> Total: <strong>{total}</strong></p></div>
+      <div className="confirmation"><div className="confirmation-title"><Icon name="check" size={18} /><h3>Resumen de asistencia</h3></div><strong className="summary-name">{participant.full_name}</strong><p>{day?.day_label ?? 'Selecciona el día'} <span>·</span> {bus ? bus.display_name : 'Bus pendiente'}</p><p>Titular: {titular ? 'Sí' : 'No'} <span>·</span> Acompañantes: {companions} <span>·</span> Total: <strong>{total}</strong></p></div>
       {total === 0 && <div className="notice warning" role="status">Selecciona al menos una persona presente para confirmar.</div>}
       {error && <ErrorNotice>{error}</ErrorNotice>}
       <button className="button primary confirm-button" disabled={!connected || busy || !bus || !day || total === 0}>{busy ? <Spinner /> : <Icon name="check" />}{busy ? 'Registrando asistencia…' : 'Confirmar asistencia'}</button>
@@ -261,7 +261,7 @@ function Workspace({ user, connected, onLogout }: { user: User; connected: boole
     setQuery('')
     setDocumentQuery('')
     setShowResults(false)
-    setSuccess(`${participant.full_name}: asistencia registrada. Bus ${summary.bus_number} · ${summary.total_present} ${summary.total_present === 1 ? 'persona' : 'personas'}.`)
+    setSuccess(`${participant.full_name}: asistencia registrada. ${summary.display_name} · ${summary.total_present} ${summary.total_present === 1 ? 'persona' : 'personas'}.`)
     setListRevision(value => value + 1)
   }
 
