@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
 from app import services
-from app.models import Attendance, AttendanceMember, AuditLog
+from app.models import Attendance, AttendanceMember, AuditLog, Bus
 from app.schemas import AttendanceCreate, AttendanceSummary
 from tests.helpers import (
     attendance_body, database_session, previous_attendance, sample_event, sample_operator,
@@ -27,7 +27,7 @@ class AttendanceTests(unittest.TestCase):
         self.day = SimpleNamespace(
             event_day_id=601, event_date=date(2026, 10, 6), day_label="Martes 6 de octubre"
         )
-        self.bus = SimpleNamespace(bus_id=501, bus_number=1)
+        self.bus = SimpleNamespace(bus_id=501, bus_number=1, display_name="Bus 1")
         self.db.scalar.side_effect = [self.registration, self.day, self.bus]
         self.created = []
         self.db.add.side_effect = self.created.append
@@ -72,6 +72,34 @@ class AttendanceTests(unittest.TestCase):
         self.assertEqual(result.total_present, 2)
         self.assertEqual(result.actual_companions, 1)
         self.assertEqual(result.checked_in_at.utcoffset().total_seconds(), -18000)
+
+    def test_no_aplica_keeps_real_bus_id_and_internal_number(self):
+        self.bus.bus_id = 516
+        self.bus.bus_number = 16
+        self.bus.display_name = "No aplica"
+        self.payload = AttendanceCreate.model_validate(attendance_body(bus_id=516))
+        with patch.object(services, "attendance_summary", return_value=None):
+            result = self.create()
+
+        attendance, audit = self.created
+        self.assertEqual(attendance.bus_id, 516)
+        self.assertEqual(audit.new_data["bus_id"], 516)
+        self.assertEqual(result.bus_id, 516)
+        self.assertEqual(result.bus_number, 16)
+        self.assertEqual(result.display_name, "No aplica")
+        self.db.commit.assert_called_once()
+
+    def test_existing_attendance_reads_bus_display_name(self):
+        self.db.execute.return_value.mappings.return_value.first.return_value = previous_attendance(
+            bus_id=516, bus_number=16, display_name="No aplica"
+        )
+        result = services.attendance_summary(self.db, self.event.event_id, self.payload.participant_id)
+
+        self.assertEqual(result.bus_id, 516)
+        self.assertEqual(result.bus_number, 16)
+        self.assertEqual(result.display_name, "No aplica")
+        statement = self.db.execute.call_args.args[0]
+        self.assertTrue(statement.selected_columns.display_name.shares_lineage(Bus.display_name))
 
     def test_duplicate_found_before_insert_is_not_written(self):
         with patch.object(services, "attendance_summary", return_value=self.previous):

@@ -17,7 +17,7 @@ from app.schemas import AttendanceSummary
 from app.security import COOKIE_NAME, JWT_AUDIENCE, JWT_ISSUER, create_access_token
 from app.services import AttendanceAlreadyExists
 from tests.helpers import (
-    attendance_body, database_session, previous_attendance, sample_event, sample_operator,
+    attendance_body, database_session, previous_attendance, sample_buses, sample_event, sample_operator,
     test_settings,
 )
 
@@ -127,26 +127,34 @@ class ApiTests(unittest.TestCase):
 
     def test_attendance_uses_authenticated_operator_returns_201_and_duplicate_409(self):
         self.authenticate()
-        summary = AttendanceSummary.model_validate(previous_attendance())
+        summary = AttendanceSummary.model_validate(previous_attendance(
+            bus_id=516, bus_number=16, display_name="No aplica"
+        ))
         with patch.object(main, "get_event", return_value=sample_event()), patch.object(
             main, "create_attendance", return_value=summary
         ) as create:
-            response = self.client.post("/api/attendance", headers=self.post_headers, json=attendance_body())
+            response = self.client.post("/api/attendance", headers=self.post_headers, json=attendance_body(bus_id=516))
             self.assertEqual(response.status_code, 201)
+            self.assertEqual(response.json()["bus_id"], 516)
+            self.assertEqual(response.json()["bus_number"], 16)
+            self.assertEqual(response.json()["display_name"], "No aplica")
             self.assertIs(create.call_args.args[2], self.operator)
             self.assertEqual(create.call_args.args[3].participant_id, 701)
+            self.assertEqual(create.call_args.args[3].bus_id, 516)
             create.side_effect = AttendanceAlreadyExists(summary)
-            duplicate = self.client.post("/api/attendance", headers=self.post_headers, json=attendance_body())
+            duplicate = self.client.post("/api/attendance", headers=self.post_headers, json=attendance_body(bus_id=516))
         self.assertEqual(duplicate.status_code, 409)
         self.assertEqual(duplicate.json()["detail"], "Esta persona ya fue registrada previamente.")
         self.assertEqual(duplicate.json()["attendance"]["total_present"], 2)
+        self.assertEqual(duplicate.json()["attendance"]["display_name"], "No aplica")
+        self.assertEqual(duplicate.json()["attendance"]["bus_id"], 516)
 
     def test_context_reads_real_identifiers_and_suggests_bogota_day(self):
         self.authenticate()
         self.db.scalars.side_effect = [
             [SimpleNamespace(event_day_id=601, event_date=date(2026, 10, 6), day_label="Martes 6 de octubre"),
              SimpleNamespace(event_day_id=602, event_date=date(2026, 10, 7), day_label="Miércoles 7 de octubre")],
-            [SimpleNamespace(bus_id=501, bus_number=1)],
+            [SimpleNamespace(**sample_buses()[0]), SimpleNamespace(**sample_buses()[-1])],
         ]
         with patch.object(main, "get_event", return_value=sample_event()), patch.object(
             main, "now_local", return_value=datetime(2026, 10, 7, 9, tzinfo=ZoneInfo("America/Bogota"))
@@ -154,10 +162,14 @@ class ApiTests(unittest.TestCase):
             response = self.client.get("/api/event/context")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["suggested_day_id"], 602)
-        self.assertEqual(response.json()["buses"], [{"bus_id": 501, "bus_number": 1}])
+        self.assertEqual(response.json()["buses"], [
+            {"bus_id": 501, "bus_number": 1, "display_name": "Bus 1"},
+            {"bus_id": 516, "bus_number": 16, "display_name": "No aplica"},
+        ])
 
     def test_export_stream_is_a_real_workbook_and_is_never_cached(self):
         self.authenticate()
+        self.db.execute.return_value.mappings.return_value.all.return_value = sample_buses()
         with patch.object(main, "get_event", return_value=sample_event()), patch.object(
             main, "export_rows", return_value=[]
         ), patch.object(main, "now_local", return_value=datetime(2026, 10, 7, 9, 30)):
@@ -167,6 +179,8 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.headers["cache-control"], "no-store")
         workbook = load_workbook(BytesIO(response.content))
         self.assertEqual(len(workbook.worksheets), 16)
+        self.assertEqual(workbook.sheetnames[-1], "No aplica")
+        self.assertNotIn("Bus 16", workbook.sheetnames)
 
     def test_database_failures_return_controlled_error_without_connection_details(self):
         secret = "do-not-expose-test-connection-password"

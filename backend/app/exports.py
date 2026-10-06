@@ -15,11 +15,13 @@ HEADERS = (
 WIDTHS = (22, 38, 29, 25, 29, 10, 17, 23, 20, 29, 38, 25)
 
 
-def build_workbook(rows: Iterable[Mapping]) -> BytesIO:
+def build_workbook(rows: Iterable[Mapping], buses: Iterable[Mapping]) -> BytesIO:
     workbook = Workbook()
     workbook.remove(workbook.active)
-    for number in range(1, 17):
-        sheet = workbook.create_sheet(f"Bus {number}")
+    sheets_by_bus_id = {}
+    for bus in buses:
+        sheet = workbook.create_sheet(bus["display_name"])
+        sheets_by_bus_id[bus["bus_id"]] = sheet
         sheet.append(HEADERS)
         sheet.freeze_panes = "A2"
         sheet.sheet_properties.pageSetUpPr.fitToPage = True
@@ -35,14 +37,14 @@ def build_workbook(rows: Iterable[Mapping]) -> BytesIO:
         number = int(row["bus_number"])
         if not 1 <= number <= 16:
             raise ValueError("La asistencia contiene un bus fuera del rango permitido.")
-        sheet = workbook[f"Bus {number}"]
+        sheet = sheets_by_bus_id[row["bus_id"]]
         moment = row["checked_in_at"]
         if isinstance(moment, datetime) and moment.tzinfo is not None:
             from .services import BOGOTA
             moment = moment.astimezone(BOGOTA).replace(tzinfo=None)
         values = (
             str(row["document"]), row["full_name"], row["planned_day"], int(row["planned_companion_count"]),
-            row["actual_day"], number, "Sí" if row["titular_present"] else "No",
+            row["actual_day"], row["display_name"], "Sí" if row["titular_present"] else "No",
             int(row["actual_companions"]), int(row["total_present"]), str(row["registered_by_document"]),
             row["registered_by_name"], moment,
         )

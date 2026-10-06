@@ -39,6 +39,7 @@ class Bus(Base):
     bus_id: Mapped[int] = mapped_column(Id, primary_key=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("event.event_id"))
     bus_number: Mapped[int] = mapped_column(TINYINT(unsigned=True))
+    display_name: Mapped[str] = mapped_column(String(30), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 

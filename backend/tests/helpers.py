@@ -64,6 +64,14 @@ def attendance_body(**overrides):
     return values | overrides
 
 
+def sample_buses():
+    return [
+        {"bus_id": 500 + number, "bus_number": number,
+         "display_name": f"Bus {number}" if number < 16 else "No aplica"}
+        for number in range(1, 17)
+    ]
+
+
 def previous_attendance(**overrides):
     values = {
         "attendance_id": 401,
@@ -72,6 +80,7 @@ def previous_attendance(**overrides):
         "actual_day": "Martes 6 de octubre",
         "bus_id": 501,
         "bus_number": 1,
+        "display_name": "Bus 1",
         "checked_in_at": datetime(2026, 10, 6, 9, 30),
         "registered_by_name": "OPERADOR DE PRUEBA",
         "registered_by_document": "0000000002",

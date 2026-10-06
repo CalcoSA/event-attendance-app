@@ -39,6 +39,7 @@ class BusResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     bus_id: int
     bus_number: int
+    display_name: str
 
 
 class EventContext(BaseModel):
@@ -56,6 +57,7 @@ class AttendanceSummary(BaseModel):
     actual_day: str
     bus_id: int
     bus_number: int
+    display_name: str
     checked_in_at: datetime
     registered_by_document: str
     registered_by_name: str

@@ -43,7 +43,7 @@ def summary_statement(event_id: int) -> Select:
     return select(
         Attendance.participant_id, Attendance.attendance_id, Attendance.actual_day_id,
         EventDay.event_date.label("actual_date"), EventDay.day_label.label("actual_day"),
-        Attendance.bus_id, Bus.bus_number, Attendance.checked_in_at,
+        Attendance.bus_id, Bus.bus_number, Bus.display_name, Attendance.checked_in_at,
         AppUser.document.label("registered_by_document"), AppUser.full_name.label("registered_by_name"),
         func.coalesce(totals.c.titular_present, 0).label("titular_present"),
         func.coalesce(totals.c.actual_companions, 0).label("actual_companions"),
@@ -158,7 +158,8 @@ def create_attendance(db: Session, event: Event, user: AppUser, payload: Attenda
         ))
         result = AttendanceSummary(
             attendance_id=attendance.attendance_id, actual_day_id=day.event_day_id, actual_date=day.event_date,
-            actual_day=day.day_label, bus_id=bus.bus_id, bus_number=bus.bus_number, checked_in_at=timestamp,
+            actual_day=day.day_label, bus_id=bus.bus_id, bus_number=bus.bus_number,
+            display_name=bus.display_name, checked_in_at=timestamp,
             registered_by_document=user.document, registered_by_name=user.full_name,
             titular_present=titular_present, actual_companions=actual_companions, total_present=total_present,
         )
@@ -186,7 +187,8 @@ def export_rows(db: Session, event_id: int):
     statement = select(
         Participant.document, Participant.full_name, planned_day.event_date.label("planned_date"),
         planned_day.day_label.label("planned_day"), EventRegistration.planned_companion_count,
-        actual_day.event_date.label("actual_date"), actual_day.day_label.label("actual_day"), Bus.bus_number,
+        actual_day.event_date.label("actual_date"), actual_day.day_label.label("actual_day"),
+        Bus.bus_id, Bus.bus_number, Bus.display_name,
         func.coalesce(totals.c.titular_present, 0).label("titular_present"),
         func.coalesce(totals.c.actual_companions, 0).label("actual_companions"),
         func.coalesce(totals.c.total_present, 0).label("total_present"),

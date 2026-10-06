@@ -147,7 +147,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.get("/api/export/attendance.xlsx")
     def export(user: AppUser = Depends(get_current_user), db: Session = Depends(get_db), settings: Settings = Depends(get_settings)):
         event = get_event(db, settings)
-        stream = build_workbook(export_rows(db, event.event_id))
+        buses = db.execute(select(Bus.bus_id, Bus.bus_number, Bus.display_name).where(
+            Bus.event_id == event.event_id,
+        ).order_by(Bus.bus_number)).mappings().all()
+        stream = build_workbook(export_rows(db, event.event_id), buses)
         filename = f"asistencia_fiesta_ninos_2026_{now_local(settings):%Y%m%d_%H%M}.xlsx"
         return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                  headers={"Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store"})

@@ -34,7 +34,7 @@ Si aparece **ASISTENCIA YA REGISTRADA**, consulte el día real, bus, hora, opera
 
 ## 8. Exportar Excel
 
-Pulse **Exportar Excel** con la sesión iniciada y conexión disponible. El archivo incluye lo registrado hasta el momento, distribuido en 16 hojas: **Bus 1** a **Bus 16**. Algunas hojas pueden estar vacías. Contiene datos personales; compártalo solo con quienes estén autorizados para la operación del evento.
+Pulse **Exportar Excel** con la sesión iniciada y conexión disponible. El archivo incluye lo registrado hasta el momento, distribuido en 16 hojas: **Bus 1** a **No aplica**. Algunas hojas pueden estar vacías. Contiene datos personales; compártalo solo con quienes estén autorizados para la operación del evento.
 
 ## 9. Sin conexión
 
